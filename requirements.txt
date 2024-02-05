@@ -9,4 +9,4 @@ pytube
 youtube-dl
 httpx
 python-multipart
-pytube
+pydub
