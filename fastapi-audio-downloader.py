@@ -10,6 +10,7 @@ import os
 from youtubesearchpython import VideosSearch
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
+import subprocess
 
 app = FastAPI()
 
@@ -32,14 +33,14 @@ async def get_audio_urls_for_query(query: str, limit: int = 5):
     results = await loop.run_in_executor(None, _sync_search)
     return results
 
-def download_audio_in_memory(audio_url: str):
-    headers = {'User-Agent': 'Mozilla/5.0'}
+def download_audio_in_memory(video_url: str):
+    # Using yt-dlp to download audio only
+    command = ['yt-dlp', '-x', '--audio-format', 'mp3', '-o', '-', video_url]
     try:
-        response = requests.get(audio_url, headers=headers)
-        response.raise_for_status()
-        return BytesIO(response.content)
-    except requests.RequestException as e:
-        print(f"Error downloading audio content: {e}")
+        result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, check=True)
+        return BytesIO(result.stdout.encode('utf-8'))
+    except subprocess.CalledProcessError as e:
+        print(f"Error downloading audio: {e.output}")
         return None
 
 async def upload_to_drive(service, file_path):
