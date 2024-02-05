@@ -1,14 +1,14 @@
 {
   "builds": [
     {
-      "src": "fastapi-video-downloader.py",
+      "src": "fastapi-audio-downloader.py",
       "use": "@vercel/python"
     }
   ],
   "routes": [
     {
       "src": "/(.*)",
-      "dest": "fastapi-video-downloader.py"
+      "dest": "fastapi-audio-downloader.py"
     }
   ]
 }
