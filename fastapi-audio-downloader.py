@@ -4,6 +4,9 @@ from io import BytesIO
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
+from pydub import AudioSegment
+import requests
+from io import BytesIO
 import tempfile
 import zipfile
 import os
@@ -33,15 +36,17 @@ async def get_audio_urls_for_query(query: str, limit: int = 5):
     results = await loop.run_in_executor(None, _sync_search)
     return results
 
-def download_audio_in_memory(video_url: str):
-    # Using yt-dlp to download audio only
-    command = ['yt-dlp', '-x', '--audio-format', 'mp3', '-o', '-', video_url]
+
+def download_audio_directly(audio_url: str):
+    headers = {'User-Agent': 'Mozilla/5.0'}
     try:
-        result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, check=True)
-        return BytesIO(result.stdout.encode('utf-8'))
-    except subprocess.CalledProcessError as e:
-        print(f"Error downloading audio: {e.output}")
+        response = requests.get(audio_url, headers=headers)
+        response.raise_for_status()  # Ensures we raise exceptions for bad responses
+        return BytesIO(response.content)
+    except requests.RequestException as e:
+        print(f"Error downloading audio content: {e}")
         return None
+
 
 async def upload_to_drive(service, file_path):
     file_metadata = {'name': os.path.basename(file_path)}
@@ -53,6 +58,7 @@ async def upload_to_drive(service, file_path):
 async def download_audios(query: str = Query(..., description="The search query for downloading audios"), 
                           limit: int = Query(1, description="The number of audios to download")):
     audio_urls = await get_audio_urls_for_query(query, limit=limit)
+    file_content = download_audio_directly(audio_url)                          
     service = build_drive_service()
     
     with tempfile.TemporaryDirectory() as temp_dir:
