@@ -11,7 +11,6 @@ from youtubesearchpython import VideosSearch
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 import subprocess
-import yt-dlp
 
 app = FastAPI()
 
