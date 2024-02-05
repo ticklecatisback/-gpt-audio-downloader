@@ -58,16 +58,16 @@ async def upload_to_drive(service, file_path):
 async def download_audios(query: str = Query(..., description="The search query for downloading audios"), 
                           limit: int = Query(1, description="The number of audios to download")):
     audio_urls = await get_audio_urls_for_query(query, limit=limit)
-    file_content = download_audio_directly(audio_url)                          
     service = build_drive_service()
     
     with tempfile.TemporaryDirectory() as temp_dir:
         zip_filename = os.path.join(temp_dir, "audios.zip")
         with zipfile.ZipFile(zip_filename, 'w') as zipf:
             for i, audio_url in enumerate(audio_urls):
-                file_content = download_audio_in_memory(audio_url)
+                # Correctly call download_audio_directly within the loop
+                file_content = download_audio_directly(audio_url)
                 if not file_content:
-                    continue
+                    continue  # Skip this audio and proceed to the next
                 
                 audio_name = f"audio_{i}.mp3"  # Assuming MP3 format for simplicity
                 audio_path = os.path.join(temp_dir, audio_name)
@@ -85,3 +85,4 @@ async def download_audios(query: str = Query(..., description="The search query 
         drive_url = f"https://drive.google.com/uc?id={file.get('id')}"
         
         return {"message": "Zip file with audios uploaded successfully.", "url": drive_url}
+
