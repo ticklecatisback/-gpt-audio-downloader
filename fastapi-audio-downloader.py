@@ -6,7 +6,6 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 from pydub import AudioSegment
 import requests
-from io import BytesIO
 import tempfile
 import zipfile
 import os
@@ -21,10 +20,9 @@ SERVICE_ACCOUNT_FILE = 'triple-water-379900-cd410b5aff31.json'
 SCOPES = ['https://www.googleapis.com/auth/drive']
 
 def build_drive_service():
-    credentials = service_account.Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
+    credentials = service_account.Credentials.from_service_account_file(
+        SERVICE_ACCOUNT_FILE, scopes=SCOPES)
     return build('drive', 'v3', credentials=credentials)
-
-executor = ThreadPoolExecutor(max_workers=5)
 
 async def get_audio_urls_for_query(query: str, limit: int = 5):
     def _sync_search():
@@ -36,14 +34,20 @@ async def get_audio_urls_for_query(query: str, limit: int = 5):
     results = await loop.run_in_executor(None, _sync_search)
     return results
 
-
 def download_audio_directly(audio_url: str):
     headers = {'User-Agent': 'Mozilla/5.0'}
     try:
         response = requests.get(audio_url, headers=headers)
         response.raise_for_status()
+
+        content_type = response.headers.get('Content-Type', '')
+        print(f"Content-Type: {content_type}, Content-Length: {len(response.content)}")
+        
+        if 'audio' not in content_type:
+            print("Downloaded content is not an audio file.")
+            return None
+        
         audio_content = BytesIO(response.content)
-        # Verify that we actually got content
         if audio_content.getbuffer().nbytes > 0:
             return audio_content
         else:
@@ -52,9 +56,6 @@ def download_audio_directly(audio_url: str):
     except requests.RequestException as e:
         print(f"Error downloading audio content: {e}")
         return None
-
-
-
 
 async def upload_to_drive(service, file_path):
     file_metadata = {'name': os.path.basename(file_path)}
@@ -78,21 +79,20 @@ async def download_audios(query: str = Query(..., description="The search query 
                     audio_path = os.path.join(temp_dir, audio_name)
                     with open(audio_path, 'wb') as audio_file:
                         audio_file.write(file_content.getbuffer())
-                        print(f"Audio file {audio_name} written to temp directory.")
-                    zipf.write(audio_path, arcname=audio_name)
+                    
+                    # Attempt to load the file using pydub to confirm it's a valid audio file
+                    try:
+                        AudioSegment.from_file(audio_path)
+                        print(f"Audio file {audio_name} validated successfully.")
+                        zipf.write(audio_path, arcname=audio_name)
+                    except Exception as e:
+                        print(f"Failed to validate audio file: {e}")
+                        continue
                 else:
                     print(f"Skipping url {audio_url}, no content downloaded.")
         
-        # Before uploading, let's check if our zip file has content
         if os.path.getsize(zip_filename) > 0:
-            # Upload the zip file to Google Drive
-            file_metadata = {'name': 'audios.zip'}
-            media = MediaFileUpload(zip_filename, mimetype='application/zip')
-            file = service.files().create(body=file_metadata, media_body=media, fields='id').execute()
-            permission = {'type': 'anyone', 'role': 'reader'}
-            service.permissions().create(fileId=file.get('id'), body=permission).execute()
-            drive_url = f"https://drive.google.com/uc?id={file.get('id')}"
-            
+            drive_url = await upload_to_drive(service, zip_filename)
             return {"message": "Zip file with audios uploaded successfully.", "url": drive_url}
         else:
             print("Zip file is empty. No audio files were added.")
