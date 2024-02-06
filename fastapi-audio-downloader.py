@@ -34,27 +34,24 @@ async def get_audio_urls_for_query(query: str, limit: int = 5):
     results = await loop.run_in_executor(None, _sync_search)
     return results
 
-def test_download_audio_directly(audio_url: str):
+def test_download_audio_directly(file_id: str):
     url = f"https://drive.google.com/uc?export=download&id={file_id}"
-    response = requests.get(url)
-    if response.status_code == 200:
-        # The file was downloaded successfully
-        # Process the file, e.g., save it locally or return the content
+    headers = {'User-Agent': 'Mozilla/5.0'}
+    try:
+        response = requests.get(url, headers=headers)
+        response.raise_for_status()
+
+        content_type = response.headers.get('Content-Type', '')
+        print(f"Content-Type: {content_type}, Content-Length: {len(response.content)}")
+        
+        if 'audio' not in content_type:
+            print("Downloaded content is not an audio file.")
+            return None
+        
         return BytesIO(response.content)
-    else:
-        print(f"Failed to download file. Status code: {response.status_code}")
+    except requests.RequestException as e:
+        print(f"Error downloading audio content: {e}")
         return None
-
-
-# Test a known good audio URL
-audio_url = "https://drive.google.com/uc?export=download&id=1Yd1glel8P7gRbPOoEzCy5ZZ6bJtNtmrF"
-audio_content = test_download_audio_directly(audio_url)
-if audio_content:
-    # Write to the /tmp directory which is writable in AWS Lambda
-    temp_audio_path = "/tmp/test_audio.mp3"
-    with open(temp_audio_path, "wb") as f:
-        f.write(audio_content.getbuffer())
-    print(f"Audio file saved as {temp_audio_path}. Try to play it with a media player.")
 
 
 async def upload_to_drive(service, file_path):
