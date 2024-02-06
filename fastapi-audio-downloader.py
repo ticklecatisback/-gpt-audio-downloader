@@ -42,14 +42,13 @@ def download_audio_directly(audio_url: str):
     try:
         response = requests.get(audio_url, headers=headers)
         response.raise_for_status()
-        
-        # Check if the response header indicates an audio file
-        if 'audio' not in response.headers.get('Content-Type', ''):
-            print(f"URL did not point to an audio file: {audio_url}")
+        audio_content = BytesIO(response.content)
+        # Verify that we actually got content
+        if audio_content.getbuffer().nbytes > 0:
+            return audio_content
+        else:
+            print("Downloaded audio content is empty.")
             return None
-        
-        print(f"Downloaded audio file size: {len(response.content)} bytes")
-        return BytesIO(response.content)
     except requests.RequestException as e:
         print(f"Error downloading audio content: {e}")
         return None
@@ -73,30 +72,29 @@ async def download_audios(query: str = Query(..., description="The search query 
         zip_filename = os.path.join(temp_dir, "audios.zip")
         with zipfile.ZipFile(zip_filename, 'w') as zipf:
             for i, audio_url in enumerate(audio_urls):
-                # Correctly call download_audio_directly within the loop
                 file_content = download_audio_directly(audio_url)
-                if not file_content:
-                    continue  # Skip this audio and proceed to the next
-                
-                audio_name = f"audio_{i}.mp3"  # Assuming MP3 format for simplicity
-                audio_path = os.path.join(temp_dir, audio_name)
-                try:
+                if file_content and file_content.getbuffer().nbytes > 0:
+                    audio_name = f"audio_{i}.mp3"
+                    audio_path = os.path.join(temp_dir, audio_name)
                     with open(audio_path, 'wb') as audio_file:
                         audio_file.write(file_content.getbuffer())
-                    print(f"Successfully wrote audio file: {audio_path}")
-                except Exception as e:
-                    print(f"Error writing audio file: {e}")
-
-                
-                zipf.write(audio_path, arcname=audio_name)
-
-        # Upload the zip file to Google Drive
-        file_metadata = {'name': 'audios.zip'}
-        media = MediaFileUpload(zip_filename, mimetype='application/zip')
-        file = service.files().create(body=file_metadata, media_body=media, fields='id').execute()
-        permission = {'type': 'anyone', 'role': 'reader'}
-        service.permissions().create(fileId=file.get('id'), body=permission).execute()
-        drive_url = f"https://drive.google.com/uc?id={file.get('id')}"
+                        print(f"Audio file {audio_name} written to temp directory.")
+                    zipf.write(audio_path, arcname=audio_name)
+                else:
+                    print(f"Skipping url {audio_url}, no content downloaded.")
         
-        return {"message": "Zip file with audios uploaded successfully.", "url": drive_url}
+        # Before uploading, let's check if our zip file has content
+        if os.path.getsize(zip_filename) > 0:
+            # Upload the zip file to Google Drive
+            file_metadata = {'name': 'audios.zip'}
+            media = MediaFileUpload(zip_filename, mimetype='application/zip')
+            file = service.files().create(body=file_metadata, media_body=media, fields='id').execute()
+            permission = {'type': 'anyone', 'role': 'reader'}
+            service.permissions().create(fileId=file.get('id'), body=permission).execute()
+            drive_url = f"https://drive.google.com/uc?id={file.get('id')}"
+            
+            return {"message": "Zip file with audios uploaded successfully.", "url": drive_url}
+        else:
+            print("Zip file is empty. No audio files were added.")
+            return {"message": "No audios were downloaded. Zip file is empty."}
 
