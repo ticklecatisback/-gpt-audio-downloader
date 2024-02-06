@@ -33,7 +33,7 @@ async def get_audio_urls_for_query(query: str, limit: int = 5):
     return results
 
 
-def download_audio_in_memory(audio_urls: str):
+def download_audio_in_memory(audio_url: str):
     headers = {'User-Agent': 'Mozilla/5.0'}
     try:
         response = requests.get(audio_url, headers=headers)
