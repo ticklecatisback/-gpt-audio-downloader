@@ -62,9 +62,12 @@ def test_download_audio_directly(audio_url: str):
 audio_url = "https://drive.google.com/uc?export=download&id=1Yd1glel8P7gRbPOoEzCy5ZZ6bJtNtmrF"
 audio_content = test_download_audio_directly(audio_url)
 if audio_content:
-    with open("test_audio.mp3", "wb") as f:
+    # Write to the /tmp directory which is writable in AWS Lambda
+    temp_audio_path = "/tmp/test_audio.mp3"
+    with open(temp_audio_path, "wb") as f:
         f.write(audio_content.getbuffer())
-    print("Audio file saved as test_audio.mp3. Try to play it with a media player.")
+    print(f"Audio file saved as {temp_audio_path}. Try to play it with a media player.")
+
 
 async def upload_to_drive(service, file_path):
     file_metadata = {'name': os.path.basename(file_path)}
