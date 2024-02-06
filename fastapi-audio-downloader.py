@@ -32,12 +32,18 @@ async def get_audio_urls_for_query(query: str, limit: int = 5):
     results = await loop.run_in_executor(None, _sync_search)
     return results
 
-def download_audio_in_memory(audio_url: str):
     headers = {'User-Agent': 'Mozilla/5.0'}
     try:
         response = requests.get(audio_url, headers=headers)
         response.raise_for_status()
-        return BytesIO(response.content)
+        content = BytesIO(response.content)
+        
+        # Simple file size check - ensure the file is larger than a minimal size (e.g., 1KB)
+        if content.getbuffer().nbytes > 1024:
+            return content
+        else:
+            print("Downloaded content is too small to be a valid audio file.")
+            return None
     except requests.RequestException as e:
         print(f"Error downloading audio content: {e}")
         return None
