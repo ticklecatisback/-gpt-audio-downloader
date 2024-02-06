@@ -32,6 +32,8 @@ async def get_audio_urls_for_query(query: str, limit: int = 5):
     results = await loop.run_in_executor(None, _sync_search)
     return results
 
+
+def download_audio_in_memory(video_url: str):
     headers = {'User-Agent': 'Mozilla/5.0'}
     try:
         response = requests.get(audio_url, headers=headers)
