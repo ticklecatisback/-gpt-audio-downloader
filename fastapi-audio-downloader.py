@@ -34,19 +34,24 @@ async def get_audio_urls_for_query(query: str, limit: int = 5):
     results = await loop.run_in_executor(None, _sync_search)
     return results
 
-def download_file_from_google_drive(file_id):
-    url = f"https://drive.google.com/uc?export=download&id={file_id}"
-    response = requests.get(url)
-    if response.status_code == 200:
-        # Process the file, e.g., save it locally
-        with open("/tmp/downloaded_file.mp3", "wb") as file:
-            file.write(response.content)
-        print("File downloaded successfully.")
-    else:
-        print("Failed to download file.")
+def test_download_audio_directly(audio_url: str):
+    headers = {'User-Agent': 'Mozilla/5.0'}
+    try:
+        response = requests.get(audio_url, headers=headers)
+        response.raise_for_status()  # Check if the request was successful
 
-file_id = "1Yd1glel8P7gRbPOoEzCy5ZZ6bJtNtmrF"  # Use your actual file ID
-download_file_from_google_drive(file_id)
+        content_type = response.headers.get('Content-Type', '')
+        print(f"Content-Type: {content_type}, Content-Length: {len(response.content)}")
+        
+        if 'audio' not in content_type:
+            print("Downloaded content is not an audio file.")
+            return None
+        
+        return BytesIO(response.content)  # Return the audio data as a BytesIO object
+    except requests.RequestException as e:
+        print(f"Error downloading audio content: {e}")
+        return None
+
 
 # Test a known good audio URL
 audio_url = "https://drive.google.com/uc?export=download&id=1Yd1glel8P7gRbPOoEzCy5ZZ6bJtNtmrF"
