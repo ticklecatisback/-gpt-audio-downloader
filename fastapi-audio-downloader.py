@@ -65,11 +65,35 @@ async def upload_to_drive(service, file_path):
     file = service.files().create(body=file_metadata, media_body=media, fields='id').execute()
     return f"https://drive.google.com/uc?id={file.get('id')}"
 
-@app.get("/download-audio/")
-async def download_audio(file_id: str):
-    destination_path = "/tmp/downloaded_audio.mp3"  # Ensure this path is writable in your environment
-    success = download_file_from_google_drive(file_id, destination_path)
-    if success:
-        return {"message": "File downloaded successfully.", "path": destination_path}
-    else:
-        raise HTTPException(status_code=404, detail="Failed to download file.")
+@app.post("/download-audios/")
+async def download_audios(query: str = Query(..., description="The search query for downloading audios"), 
+                          limit: int = Query(1, description="The number of audios to download")):
+    audio_urls = await get_audio_urls_for_query(query, limit=limit)
+    service = build_drive_service()
+    
+    with tempfile.TemporaryDirectory() as temp_dir:
+        zip_filename = os.path.join(temp_dir, "audios.zip")
+        with zipfile.ZipFile(zip_filename, 'w') as zipf:
+            for i, audio_url in enumerate(audio_urls):
+                file_content = test_download_audio_directly(audio_url)  # Ensure this matches your function name
+                if file_content and file_content.getbuffer().nbytes > 0:
+                    audio_name = f"audio_{i}.mp3"
+                    audio_path = os.path.join(temp_dir, audio_name)
+                    # Save the downloaded audio content to a file
+                    with open(audio_path, 'wb') as audio_file:
+                        audio_file.write(file_content.getbuffer())
+                    
+                    # Optionally, process the audio file here using PyDub or another library
+                    
+                    # Add the audio file to the ZIP archive
+                    zipf.write(audio_path, arcname=audio_name)
+                else:
+                    print(f"Skipping URL {audio_url}, no content downloaded or the content is not an audio file.")
+        
+        # After all audio files are added to the ZIP, proceed to upload it to Google Drive
+        if os.path.getsize(zip_filename) > 0:
+            drive_url = await upload_to_drive(service, zip_filename)
+            return {"message": "Zip file with audios uploaded successfully.", "url": drive_url}
+        else:
+            print("Zip file is empty. No audio files were added.")
+            return {"message": "No audios were downloaded. Zip file is empty."}
