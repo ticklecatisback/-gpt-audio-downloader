@@ -39,7 +39,7 @@ def download_file_from_google_drive(file_id):
     response = requests.get(url)
     if response.status_code == 200:
         # Process the file, e.g., save it locally
-        with open("downloaded_file.mp3", "wb") as file:
+        with open("/tmp/downloaded_file.mp3", "wb") as file:
             file.write(response.content)
         print("File downloaded successfully.")
     else:
