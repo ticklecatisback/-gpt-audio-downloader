@@ -34,7 +34,7 @@ async def get_audio_urls_for_query(query: str, limit: int = 5):
     results = await loop.run_in_executor(None, _sync_search)
     return results
 
-def download_audio_directly(audio_url: str):
+def test_download_audio_directly(audio_url: str):
     headers = {'User-Agent': 'Mozilla/5.0'}
     try:
         response = requests.get(audio_url, headers=headers)
@@ -45,17 +45,26 @@ def download_audio_directly(audio_url: str):
         
         if 'audio' not in content_type:
             print("Downloaded content is not an audio file.")
-            return None
+            return
         
         audio_content = BytesIO(response.content)
         if audio_content.getbuffer().nbytes > 0:
+            print("Audio content downloaded successfully.")
             return audio_content
         else:
             print("Downloaded audio content is empty.")
-            return None
+            return
     except requests.RequestException as e:
         print(f"Error downloading audio content: {e}")
-        return None
+        return
+
+# Test a known good audio URL
+audio_url = "https://drive.google.com/uc?export=download&id=1Yd1glel8P7gRbPOoEzCy5ZZ6bJtNtmrF"
+audio_content = test_download_audio_directly(audio_url)
+if audio_content:
+    with open("test_audio.mp3", "wb") as f:
+        f.write(audio_content.getbuffer())
+    print("Audio file saved as test_audio.mp3. Try to play it with a media player.")
 
 async def upload_to_drive(service, file_path):
     file_metadata = {'name': os.path.basename(file_path)}
