@@ -1,82 +1,141 @@
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, HTTPException, Query
+from fastapi.responses import HTMLResponse
+# Assuming you might still want to use requests for other purposes, keeping it imported
 import requests
-from io import BytesIO
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
+from googleapiclient.http import MediaIoBaseUpload
 from googleapiclient.http import MediaFileUpload
-import tempfile
-import zipfile
+from googleapiclient.errors import HttpError
+from io import BytesIO
 import os
-from youtubesearchpython import VideosSearch
-import asyncio
-from concurrent.futures import ThreadPoolExecutor
-import subprocess
-import yt-dlp
+import tempfile
+import base64
+import zipfile
+import shutil
 
 app = FastAPI()
 
 SERVICE_ACCOUNT_FILE = 'triple-water-379900-cd410b5aff31.json'
 SCOPES = ['https://www.googleapis.com/auth/drive']
+BING_API_KEY = 'd7325b31eb1845b7940decf84ba56e13'  # If you plan to use Bing Image Search API directly
+
 
 def build_drive_service():
     credentials = service_account.Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
     return build('drive', 'v3', credentials=credentials)
 
-executor = ThreadPoolExecutor(max_workers=5)
 
-async def get_audio_urls_for_query(query: str, limit: int = 5):
-    def _sync_search():
-        videos_search = VideosSearch(query, limit=limit)
-        videos_search.next()
-        return [result['link'] for result in videos_search.result()['result']]
+def get_image_urls_for_query(query, limit=5):
+    search_url = "https://api.bing.microsoft.com/v7.0/images/search"
+    headers = {"Ocp-Apim-Subscription-Key": BING_API_KEY}
+    params = {"q": query, "count": limit}
+    response = requests.get(search_url, headers=headers, params=params)
+    response.raise_for_status()
+    search_results = response.json()
+    return [img["contentUrl"] for img in search_results["value"]]
 
-    loop = asyncio.get_running_loop()
-    results = await loop.run_in_executor(None, _sync_search)
-    return results
 
-def download_audio_in_memory(video_url: str):
-    # Using yt-dlp to download audio only
-    command = ['yt-dlp', '-x', '--audio-format', 'mp3', '-o', '-', video_url]
+def download_image_in_memory(image_url):
+    headers = {'User-Agent': 'Mozilla/5.0'}  # Including a user-agent header
     try:
-        result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, check=True)
-        return BytesIO(result.stdout.encode('utf-8'))
-    except subprocess.CalledProcessError as e:
-        print(f"Error downloading audio: {e.output}")
-        return None
+        response = requests.get(image_url, headers=headers)
+        response.raise_for_status()  # This will raise an exception for 4XX or 5XX responses
+        return BytesIO(response.content)
+    except requests.RequestException as e:
+        print(f"Error downloading {image_url}: {e}")
+        return None  # Return None to indicate the download failed
 
-async def upload_to_drive(service, file_path):
-    file_metadata = {'name': os.path.basename(file_path)}
-    media = MediaFileUpload(file_path, mimetype='application/zip')
-    file = service.files().create(body=file_metadata, media_body=media, fields='id').execute()
-    return f"https://drive.google.com/uc?id={file.get('id')}"
 
-@app.post("/download-audios/")
-async def download_audios(query: str = Query(..., description="The search query for downloading audios"), 
-                          limit: int = Query(1, description="The number of audios to download")):
-    audio_urls = await get_audio_urls_for_query(query, limit=limit)
+def upload_file_to_drive(service, file_name, file_content, mime_type='image/jpeg'):
+    file_metadata = {'name': file_name}
+    media = MediaIoBaseUpload(file_content, mimetype=mime_type, resumable=True)
+    try:
+        file = service.files().create(body=file_metadata, media_body=media, fields='id').execute()
+        # Set the file to be publicly readable
+        permission = {
+            'type': 'anyone',
+            'role': 'reader',
+        }
+        service.permissions().create(fileId=file.get('id'), body=permission).execute()
+        return f"https://drive.google.com/uc?id={file.get('id')}"
+    except HttpError as error:
+        print(f'An error occurred: {error}')
+        raise HTTPException(status_code=500, detail=f"Failed to upload {file_name}: {str(error)}")
+
+
+@app.post("/test-upload/")
+async def test_upload():
     service = build_drive_service()
-    
+    test_image_url = "https://cat-world.com/wp-content/uploads/2017/06/spotted-tabby-1.jpg"  # Replace this with a real URL to a test image
+
+    # Simulate downloading an image to memory
+    image_content = requests.get(test_image_url).content
+    temp_dir = tempfile.mkdtemp()
+    zip_filename = os.path.join(temp_dir, "test-image.zip")
+
+    # Create a zip file with the test image
+    with zipfile.ZipFile(zip_filename, 'w') as zipf:
+        image_name = "test-image.jpg"
+        image_path = os.path.join(temp_dir, image_name)
+        with open(image_path, 'wb') as image_file:
+            image_file.write(image_content)
+        zipf.write(image_path, arcname=image_name)
+
+    # Upload the zip file to Google Drive
+    file_metadata = {'name': 'test-image.zip'}
+    media = MediaFileUpload(zip_filename, mimetype='application/zip')
+    file = service.files().create(body=file_metadata, media_body=media, fields='id').execute()
+    file_id = file.get('id')
+
+    # Set the file to be publicly readable
+    permission = {
+        'type': 'anyone',
+        'role': 'reader',
+    }
+    service.permissions().create(fileId=file_id, body=permission).execute()
+    drive_url = f"https://drive.google.com/uc?id={file_id}"
+
+    # Clean up the temporary directory
+    shutil.rmtree(temp_dir)
+
+    return {"message": "Test image zip uploaded successfully.", "url": drive_url}
+
+
+@app.get("/")
+async def root():
+    return HTMLResponse(content="<h1>Image Uploader to Google Drive</h1>")
+
+
+@app.post("/download-images/")
+async def download_images(query: str = Query(..., description="The search query for downloading images"),
+                          limit: int = Query(1, description="The number of images to download")):
+    image_urls = get_image_urls_for_query(query, limit=limit)
+    service = build_drive_service()
+    uploaded_urls = []
+
     with tempfile.TemporaryDirectory() as temp_dir:
-        zip_filename = os.path.join(temp_dir, "audios.zip")
+        zip_filename = os.path.join(temp_dir, "images.zip")
         with zipfile.ZipFile(zip_filename, 'w') as zipf:
-            for i, audio_url in enumerate(audio_urls):
-                file_content = download_audio_in_memory(audio_url)
+            for i, image_url in enumerate(image_urls):
+                file_content = download_image_in_memory(image_url)
                 if not file_content:
-                    continue
-                
-                audio_name = f"audio_{i}.mp3"  # Assuming MP3 format for simplicity
-                audio_path = os.path.join(temp_dir, audio_name)
-                with open(audio_path, 'wb') as audio_file:
-                    audio_file.write(file_content.getbuffer())
-                
-                zipf.write(audio_path, arcname=audio_name)
+                    continue  # Skip this image and proceed to the next
+
+                image_name = f"image_{i}.jpg"
+                image_path = os.path.join(temp_dir, image_name)
+                with open(image_path, 'wb') as image_file:
+                    image_file.write(file_content.getbuffer())  # Write the image content to a file
+
+                zipf.write(image_path, arcname=image_name)  # Add the image to the zip file
 
         # Upload the zip file to Google Drive
-        file_metadata = {'name': 'audios.zip'}
+        file_metadata = {'name': 'images.zip'}
         media = MediaFileUpload(zip_filename, mimetype='application/zip')
         file = service.files().create(body=file_metadata, media_body=media, fields='id').execute()
         permission = {'type': 'anyone', 'role': 'reader'}
         service.permissions().create(fileId=file.get('id'), body=permission).execute()
         drive_url = f"https://drive.google.com/uc?id={file.get('id')}"
-        
-        return {"message": "Zip file with audios uploaded successfully.", "url": drive_url}
+
+        return {"message": "Zip file uploaded successfully.", "url": drive_url}
+
