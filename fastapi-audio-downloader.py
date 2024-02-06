@@ -85,7 +85,8 @@ async def download_audios(query: str = Query(..., description="The search query 
         zip_filename = os.path.join(temp_dir, "audios.zip")
         with zipfile.ZipFile(zip_filename, 'w') as zipf:
             for i, audio_url in enumerate(audio_urls):
-                file_content = download_audio_directly(audio_url)
+                # Ensure you're calling the correct function
+                file_content = test_download_audio_directly(audio_url)  # Corrected function name
                 if file_content and file_content.getbuffer().nbytes > 0:
                     audio_name = f"audio_{i}.mp3"
                     audio_path = os.path.join(temp_dir, audio_name)
