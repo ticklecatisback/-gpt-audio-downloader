@@ -65,12 +65,12 @@ async def download_audios(query: str = Query(..., description="The search query 
     with tempfile.TemporaryDirectory() as temp_dir:
         zip_filename = os.path.join(temp_dir, "audios.zip")
         with zipfile.ZipFile(zip_filename, 'w') as zipf:
-            for i, audio_url in enumerate(audio_urls):
-                file_content = download_audio_in_memory(audio_url)
+            for i, audio_url in enumerate(audio_urls):  # Ensure audio_url is defined here
+                file_content = download_audio_in_memory(audio_url)  # audio_url should be defined
                 if not file_content:
                     continue
                 
-                audio_name = f"audio_{i}.mp3"  # Assuming MP3 format for simplicity
+                audio_name = f"audio_{i}.mp3"
                 audio_path = os.path.join(temp_dir, audio_name)
                 with open(audio_path, 'wb') as audio_file:
                     audio_file.write(file_content.getbuffer())
