@@ -41,11 +41,20 @@ def download_audio_directly(audio_url: str):
     headers = {'User-Agent': 'Mozilla/5.0'}
     try:
         response = requests.get(audio_url, headers=headers)
-        response.raise_for_status()  # Ensures we raise exceptions for bad responses
+        response.raise_for_status()
+        
+        # Check if the response header indicates an audio file
+        if 'audio' not in response.headers.get('Content-Type', ''):
+            print(f"URL did not point to an audio file: {audio_url}")
+            return None
+        
+        print(f"Downloaded audio file size: {len(response.content)} bytes")
         return BytesIO(response.content)
     except requests.RequestException as e:
         print(f"Error downloading audio content: {e}")
         return None
+
+
 
 
 async def upload_to_drive(service, file_path):
@@ -71,8 +80,13 @@ async def download_audios(query: str = Query(..., description="The search query 
                 
                 audio_name = f"audio_{i}.mp3"  # Assuming MP3 format for simplicity
                 audio_path = os.path.join(temp_dir, audio_name)
-                with open(audio_path, 'wb') as audio_file:
-                    audio_file.write(file_content.getbuffer())
+                try:
+                    with open(audio_path, 'wb') as audio_file:
+                        audio_file.write(file_content.getbuffer())
+                    print(f"Successfully wrote audio file: {audio_path}")
+                except Exception as e:
+                    print(f"Error writing audio file: {e}")
+
                 
                 zipf.write(audio_path, arcname=audio_name)
 
