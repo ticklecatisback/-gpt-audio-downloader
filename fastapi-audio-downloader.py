@@ -10,6 +10,7 @@ import os
 from youtubesearchpython import VideosSearch
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
+import pytube
 
 app = FastAPI()
 
@@ -22,15 +23,19 @@ def build_drive_service():
 
 executor = ThreadPoolExecutor(max_workers=5)
 
-async def get_audio_urls_for_query(query: str, limit: int = 5):
-    def _sync_search():
-        videos_search = VideosSearch(query, limit=limit)
-        videos_search.next()
-        return [result['link'] for result in videos_search.result()['result']]
-
-    loop = asyncio.get_running_loop()
-    results = await loop.run_in_executor(None, _sync_search)
-    return results
+def download_audio_with_pytube(url, save_path):
+    try:
+        yt = YouTube(url)
+        audio_stream = yt.streams.filter(only_audio=True).first()
+        if audio_stream:
+            audio_stream.download(output_path=save_path)
+            return True
+        else:
+            print("No audio stream found")
+            return False
+    except Exception as e:
+        print(f"Error downloading audio: {e}")
+        return False
 
 
 def download_audio_in_memory(audio_url: str):
