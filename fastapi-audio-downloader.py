@@ -10,7 +10,8 @@ import os
 from youtubesearchpython import VideosSearch
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
-import pytube
+from pytube import YouTube
+
 
 app = FastAPI()
 
