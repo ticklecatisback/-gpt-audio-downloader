@@ -23,7 +23,7 @@ def build_drive_service():
 
 executor = ThreadPoolExecutor(max_workers=5)
 
-def download_audio_with_pytube(url, save_path):
+def get_audio_urls_for_query(url, save_path):
     try:
         yt = YouTube(url)
         audio_stream = yt.streams.filter(only_audio=True).first()
