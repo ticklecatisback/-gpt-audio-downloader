@@ -36,6 +36,9 @@ def download_audio_with_pytube(video_url: str) -> BytesIO:
         else:
             print(f"No audio stream found for {video_url}")
             return None
+    except pytube.exceptions.RegexMatchError:
+        print(f"Invalid YouTube URL: {video_url}")
+        return None
     except Exception as e:
         print(f"Error downloading audio from {video_url}: {e}")
         return None
