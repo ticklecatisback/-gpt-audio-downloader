@@ -23,38 +23,48 @@ def build_drive_service():
         SERVICE_ACCOUNT_FILE, scopes=SCOPES)
     return build('drive', 'v3', credentials=credentials)
 
-def download_audio_from_youtube(url, save_path):
+def download_audio_with_pytube(video_url: str) -> BytesIO:
     try:
-        yt = YouTube(url)
+        yt = YouTube(video_url)
         audio_stream = yt.streams.filter(only_audio=True).first()
+        
         if audio_stream:
-            audio_file_path = audio_stream.download(output_path=save_path)
-            return audio_file_path  # Return the path of the downloaded file
+            buffer = BytesIO()
+            audio_stream.stream_to_buffer(buffer=buffer)
+            buffer.seek(0)  # Rewind the buffer to the beginning
+            return buffer
         else:
-            print("No audio stream found")
+            print(f"No audio stream found for {video_url}")
             return None
     except Exception as e:
-        print(f"Error downloading audio: {e}")
+        print(f"Error downloading audio from {video_url}: {e}")
         return None
 
-async def upload_to_drive(service, file_path):
-    file_metadata = {'name': os.path.basename(file_path)}
-    media = MediaFileUpload(file_path, mimetype='audio/mp3')
-    file = service.files().create(body=file_metadata, media_body=media, fields='id').execute()
-    permission = {'type': 'anyone', 'role': 'reader'}
-    service.permissions().create(fileId=file.get('id'), body=permission).execute()
-    return f"https://drive.google.com/uc?id={file.get('id')}"
-
-@app.post("/download-and-upload-audio/")
-async def download_and_upload_audio(youtube_url: str = Query(..., description="The YouTube URL to download audio from")):
+@app.post("/download-audios/")
+async def download_audios(query: str = Query(..., description="The search query for downloading audios")):
     service = build_drive_service()
-    
-    with tempfile.TemporaryDirectory() as temp_dir:
-        audio_file_path = download_audio_from_youtube(youtube_url, temp_dir)
-        
-        if not audio_file_path:
-            return {"message": "Failed to download audio."}
+    video_url = query  # Assuming the query is the YouTube video URL for simplicity
 
-        drive_url = await upload_to_drive(service, audio_file_path)
+    with tempfile.TemporaryDirectory() as temp_dir:
+        zip_filename = os.path.join(temp_dir, "audios.zip")
+        with zipfile.ZipFile(zip_filename, 'w') as zipf:
+            file_content = download_audio_with_pytube(video_url)
+            if file_content:
+                audio_name = "audio.mp3"  # Simplified to a single file for this example
+                audio_path = os.path.join(temp_dir, audio_name)
+                with open(audio_path, 'wb') as audio_file:
+                    audio_file.write(file_content.read())
+                
+                zipf.write(audio_path, arcname=audio_name)
+            else:
+                return {"message": "Failed to download any audio."}
+
+        # Upload the zip file to Google Drive
+        file_metadata = {'name': 'audios.zip'}
+        media = MediaFileUpload(zip_filename, mimetype='application/zip')
+        file = service.files().create(body=file_metadata, media_body=media, fields='id').execute()
+        permission = {'type': 'anyone', 'role': 'reader'}
+        service.permissions().create(fileId=file.get('id'), body=permission).execute()
+        drive_url = f"https://drive.google.com/uc?id={file.get('id')}"
         
-        return {"message": "Audio uploaded successfully.", "url": drive_url}
+        return {"message": "Zip file with audios uploaded successfully.", "url": drive_url}
