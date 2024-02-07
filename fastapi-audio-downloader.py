@@ -28,15 +28,14 @@ def get_audio_urls_for_query(url, save_path):
         yt = YouTube(url)
         audio_stream = yt.streams.filter(only_audio=True).first()
         if audio_stream:
-            audio_stream.download(output_path=save_path)
-            return True
+            audio_file_path = audio_stream.download(output_path=save_path)
+            return audio_file_path  # Return the path of the downloaded file
         else:
             print("No audio stream found")
-            return False
+            return None
     except Exception as e:
         print(f"Error downloading audio: {e}")
-        return False
-
+        return None
 
 def download_audio_in_memory(audio_url: str):
     headers = {'User-Agent': 'Mozilla/5.0'}
@@ -61,33 +60,17 @@ async def upload_to_drive(service, file_path):
     file = service.files().create(body=file_metadata, media_body=media, fields='id').execute()
     return f"https://drive.google.com/uc?id={file.get('id')}"
 
-@app.post("/download-audios/")
-async def download_audios(query: str = Query(..., description="The search query for downloading audios"), 
-                          limit: int = Query(1, description="The number of audios to download")):
-    audio_urls = await get_audio_urls_for_query(query, limit=limit)
+@app.post("/download-audio/")
+async def download_audio(youtube_url: str = Query(..., description="The YouTube URL to download audio from")):
     service = build_drive_service()
     
     with tempfile.TemporaryDirectory() as temp_dir:
-        zip_filename = os.path.join(temp_dir, "audios.zip")
-        with zipfile.ZipFile(zip_filename, 'w') as zipf:
-            for i, audio_url in enumerate(audio_urls):  # Ensure audio_url is defined here
-                file_content = download_audio_in_memory(audio_url)  # audio_url should be defined
-                if not file_content:
-                    continue
-                
-                audio_name = f"audio_{i}.mp3"
-                audio_path = os.path.join(temp_dir, audio_name)
-                with open(audio_path, 'wb') as audio_file:
-                    audio_file.write(file_content.getbuffer())
-                
-                zipf.write(audio_path, arcname=audio_name)
-
-        # Upload the zip file to Google Drive
-        file_metadata = {'name': 'audios.zip'}
-        media = MediaFileUpload(zip_filename, mimetype='application/zip')
-        file = service.files().create(body=file_metadata, media_body=media, fields='id').execute()
-        permission = {'type': 'anyone', 'role': 'reader'}
-        service.permissions().create(fileId=file.get('id'), body=permission).execute()
-        drive_url = f"https://drive.google.com/uc?id={file.get('id')}"
+        audio_file_path = download_audio_from_youtube(youtube_url, temp_dir)
         
-        return {"message": "Zip file with audios uploaded successfully.", "url": drive_url}
+        if not audio_file_path:
+            return {"message": "Failed to download audio."}
+
+        # Upload the audio file to Google Drive
+        drive_url = await upload_to_drive(service, audio_file_path)
+        
+        return {"message": "Audio uploaded successfully.", "url": drive_url}
