@@ -12,55 +12,83 @@ import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from pytube import YouTube
 
-
 app = FastAPI()
 
 SERVICE_ACCOUNT_FILE = 'triple-water-379900-cd410b5aff31.json'
 SCOPES = ['https://www.googleapis.com/auth/drive']
 
+
 def build_drive_service():
-    credentials = service_account.Credentials.from_service_account_file(
-        SERVICE_ACCOUNT_FILE, scopes=SCOPES)
+    credentials = service_account.Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
     return build('drive', 'v3', credentials=credentials)
 
-def download_audio_with_pytube(video_url: str) -> BytesIO:
+
+executor = ThreadPoolExecutor(max_workers=5)
+
+
+async def get_audio_urls_for_query(query: str, limit: int = 5):
+    def _sync_search():
+        videos_search = VideosSearch(query, limit=limit)
+        videos_search.next()
+        return [result['link'] for result in videos_search.result()['result']]
+
+    loop = asyncio.get_running_loop()
+    results = await loop.run_in_executor(None, _sync_search)
+    return results
+
+
+def download_audio_in_memory(audio_url: str):
     try:
-        yt = YouTube(video_url)
-        audio_stream = yt.streams.filter(only_audio=True).first()
-        
+        yt = YouTube(audio_url)
+        # Filter the audio streams, preferably by the audio format (e.g., mp4) and select the highest quality
+        audio_stream = yt.streams.filter(only_audio=True, file_extension='mp4').first()
         if audio_stream:
+            # Download the audio stream in memory
             buffer = BytesIO()
-            audio_stream.stream_to_buffer(buffer=buffer)
-            buffer.seek(0)  # Rewind the buffer to the beginning
-            return buffer
+            audio_stream.stream_to_buffer(buffer)
+            buffer.seek(0)  # Move to the start of the buffer
+
+            # Simple file size check - ensure the file is larger than a minimal size (e.g., 1KB)
+            if buffer.getbuffer().nbytes > 1024:
+                return buffer
+            else:
+                print("Downloaded content is too small to be a valid audio file.")
+                return None
         else:
-            print(f"No audio stream found for {video_url}")
+            print("No audio stream found for this video.")
             return None
-    except pytube.exceptions.RegexMatchError:
-        print(f"Invalid YouTube URL: {video_url}")
-        return None
     except Exception as e:
-        print(f"Error downloading audio from {video_url}: {e}")
+        print(f"Error downloading audio content: {e}")
         return None
 
+
+async def upload_to_drive(service, file_path):
+    file_metadata = {'name': os.path.basename(file_path)}
+    media = MediaFileUpload(file_path, mimetype='application/zip')
+    file = service.files().create(body=file_metadata, media_body=media, fields='id').execute()
+    return f"https://drive.google.com/uc?id={file.get('id')}"
+
+
 @app.post("/download-audios/")
-async def download_audios(query: str = Query(..., description="The search query for downloading audios")):
+async def download_audios(query: str = Query(..., description="The search query for downloading audios"),
+                          limit: int = Query(1, description="The number of audios to download")):
+    audio_urls = await get_audio_urls_for_query(query, limit=limit)
     service = build_drive_service()
-    video_url = query  # Assuming the query is the YouTube video URL for simplicity
 
     with tempfile.TemporaryDirectory() as temp_dir:
         zip_filename = os.path.join(temp_dir, "audios.zip")
         with zipfile.ZipFile(zip_filename, 'w') as zipf:
-            file_content = download_audio_with_pytube(video_url)
-            if file_content:
-                audio_name = "audio.mp3"  # Simplified to a single file for this example
+            for i, audio_url in enumerate(audio_urls):  # Ensure audio_url is defined here
+                file_content = download_audio_in_memory(audio_url)  # audio_url should be defined
+                if not file_content:
+                    continue
+
+                audio_name = f"audio_{i}.mp3"
                 audio_path = os.path.join(temp_dir, audio_name)
                 with open(audio_path, 'wb') as audio_file:
-                    audio_file.write(file_content.read())
-                
+                    audio_file.write(file_content.getbuffer())
+
                 zipf.write(audio_path, arcname=audio_name)
-            else:
-                return {"message": "Failed to download any audio."}
 
         # Upload the zip file to Google Drive
         file_metadata = {'name': 'audios.zip'}
@@ -69,5 +97,5 @@ async def download_audios(query: str = Query(..., description="The search query 
         permission = {'type': 'anyone', 'role': 'reader'}
         service.permissions().create(fileId=file.get('id'), body=permission).execute()
         drive_url = f"https://drive.google.com/uc?id={file.get('id')}"
-        
+
         return {"message": "Zip file with audios uploaded successfully.", "url": drive_url}
