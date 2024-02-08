@@ -60,6 +60,8 @@ def download_audio_in_memory(audio_url: str):
     except Exception as e:
         print(f"Error downloading audio content: {e}")
         return None
+        
+        download_audio_in_memory.max_duration = 300
 
 
 async def upload_to_drive(service, file_path):
