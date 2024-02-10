@@ -15,7 +15,7 @@ from pytube import YouTube
 
 app = FastAPI()
 
-SERVICE_ACCOUNT_FILE = 'triple-water-379900-cd410b5aff31.json'
+SERVICE_ACCOUNT_FILE = 'YOUR_JSON_FILE'
 SCOPES = ['https://www.googleapis.com/auth/drive']
 
 html = f"""
